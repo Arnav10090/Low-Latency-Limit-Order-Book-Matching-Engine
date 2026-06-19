@@ -109,14 +109,14 @@ Numbers are reported in nanoseconds per order (wall-clock `steady_clock` convers
 - **Distribution:** 60% BUY LMT | 20% SELL LMT | 10% CANCEL | 10% MODIFY
 
 - **Latency (ns) — Unpinned / Pinned (Core 2):**
-       - **Mean:** 9,020 / 8,347
-       - **p50:** 900 / 700
-       - **p95:** 60,800 / 55,200
-       - **p99:** 118,700 / 128,000
-       - **p99.9:** 176,200 / 199,000
-       - **Max:** 37,388,200 / 34,557,800
+       - **Mean:** 714 / 677
+       - **p50:** 500 / 500
+       - **p95:** 900 / 900
+       - **p99:** 1,200 / 1,300
+       - **p99.9:** 16,900 / 25,700
+       - **Max:** 39,505,800 / 36,444,900
 
-- **Throughput (orders/sec):** Unpinned: 110,494 | Pinned: 119,299
+- **Throughput (orders/sec):** Unpinned: 1,358,587 | Pinned: 1,406,744
 
 - **Methodology snapshot:** Workload: Seeded resting book with deterministic crossing flow (seed 42). Completion: Per-request polling via `lastProcessedRequestId()`. Timestamps: LFENCE/RDTSC start | RDTSCP/LFENCE end. Calibration: Median of 7 `steady_clock` windows (250 ms each). Units: wall-clock (`steady_clock`) measurements.
 
