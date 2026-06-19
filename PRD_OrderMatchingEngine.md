@@ -10,10 +10,10 @@
 
 ## 1. Project Context
 
-This project demonstrates production-relevant C++ engineering for a high-frequency trading infrastructure role. The goal is a clean, benchmarked, GitHub-ready codebase that a trading firm's engineer can read and immediately recognize as domain-literate. Every design decision must be justifiable in a technical interview.
+This project demonstrates industry-relevant C++ engineering for a high-frequency trading infrastructure role. The goal is a clean, benchmarked, GitHub-ready codebase that a trading firm's engineer can read and immediately recognize as domain-literate. Every design decision must be justifiable in a technical interview.
 
 **Resume headline this project must support:**
-> Built a price-time priority limit order book matching engine in C++ achieving ~300 ns average order processing latency and 2M+ orders/second throughput on 1M synthetic orders. Implemented a lock-free SPSC queue passing lightweight order requests to a pinned engine thread, mitigating allocation overhead via a cache-friendly array-based memory pool.
+> Built a price-time-priority limit order book matching engine in C++ with a lock-free SPSC handoff, compile-time memory pooling, and a Linux-first microbenchmark harness. Reported latency and throughput are machine-dependent — use the included benchmark harness and methodology to reproduce results on your target hardware.
 
 ---
 
@@ -666,7 +666,7 @@ It should include testing a `MODIFY` order to verify that quantities can decreas
 ### 13.1 Benchmark Design
 
 - **Warmup phase**: Enqueue 10,000 requests and poll `lastProcessedId()` until the final warmup request ID is observed. This warms the L1/L2 caches and branch predictors. Do not record these latencies.
-- **Latency methodology**: Use `RDTSC` (Read Time-Stamp Counter) on x86 for cycle-accurate timestamps. `RDTSC` offers ~1ns overhead vs ~10-20ns for `std::chrono::high_resolution_clock`.
+ - **Latency methodology**: Record high-resolution cycle counts from the processor's Time-Stamp Counter (TSC) using serialized `RDTSC`/`RDTSCP` on x86 as the canonical, primary measurement unit. Convert cycles to wall-clock nanoseconds only via an explicit local calibration step; treat reported nanoseconds as calibrated estimates rather than absolute wall-clock truth. Calibration mitigates but does not eliminate sources of bias (CPU turbo, frequency scaling, virtualization, or non-invariant TSC). Always include calibration details and a short system snapshot with published numbers.
   *Note: Provide a fallback to `std::chrono` if `__rdtsc()` is unavailable.*
 - **Completion signaling**: The producer polls `engine.lastProcessedId()` after each `submitRequest()` call to determine the exact cycle at which the engine thread finished processing that specific order. This gives precise per-order round-trip latency (submit → queue → dequeue → process → atomic store → producer observes).
 - **Affinity**: Run the benchmark twice: once with the engine thread unpinned, and once pinned to an isolated core. Report both sets of percentiles (p50, p95, p99, p99.9). Pinned threads eliminate context switching and scheduler noise, crucial for latency consistency.
@@ -680,7 +680,7 @@ inline uint64_t rdtsc() {
     return ((uint64_t)hi << 32) | lo;
 }
 ```
-*Note: RDTSC counts cycles. Convert to nanoseconds by dividing by the CPU frequency (e.g., 3.0 GHz = 3.0 cycles/ns).*
+*Note: The TSC reports cycle counts — cycles are the primary, highest-resolution measurement used by the harness. Converting cycle deltas to wall-clock nanoseconds requires an empirical, local calibration because TSC behavior and effective frequency depend on CPU model, power management (turbo/C-states), virtualization, and whether the CPU exposes an invariant TSC. The recommended calibration measures cycles per nanosecond across multiple `steady_clock` windows, uses a robust statistic (median with outlier rejection), and records the resulting calibration factor. When publishing results: (1) report raw cycle counts (preferred), (2) report the calibrated nanoseconds alongside the calibration method and factor, and (3) include a concise system snapshot (CPU model, OS, governor/turbo settings, affinity) so readers can interpret the numbers. Treat converted nanoseconds as estimates, not absolute wall-clock truths.*
 
 ### 13.3 Measurement Flow
 
@@ -722,31 +722,38 @@ engine.stop();
 
 **Why `lastProcessedId()` polling:** This measures the true end-to-end latency for each order: the time from the producer's `rdtsc()` call through queue push, queue pop, order processing, and the atomic ID store becoming visible to the producer. Each order is individually timed, giving accurate per-order latency distributions.
 
-### 13.4 Expected Benchmark Output
+### 13.4 Example Benchmark Output (format)
+
+The benchmark prints tabular latency percentiles and throughput. The
+numerical values are machine- and configuration-dependent. Below is an
+example output format (no numeric claims):
 
 ```
 =======================================================
-  Dolat Capital — Order Matching Engine Benchmark
+    <Project> — Order Matching Engine Benchmark
 =======================================================
-  Orders        : 1,000,000
-  Distribution  : 60% BUY LMT | 20% SELL LMT | 10% CANCEL | 10% MODIFY
+    Orders        : <N>
+    Distribution  : <workload distribution description>
 
-  --- Latency (per order, ns) ---
-  Percentile | Unpinned    | Pinned (Core 2)
-  -----------------------------------------
-  Mean       |    312 ns   |    240 ns
-  p50        |    278 ns   |    215 ns
-  p95        |    621 ns   |    310 ns
-  p99        |  1,204 ns   |    385 ns
-  p99.9      |  4,811 ns   |    650 ns
-  Max        | 38,204 ns   |  1,800 ns
+    --- Latency (per order, ns) ---
+    Percentile | Unpinned    | Pinned (Core X)
+    -----------------------------------------
+    Mean       | <mean_ns>   | <mean_ns>
+    p50        | <p50_ns>    | <p50_ns>
+    p95        | <p95_ns>    | <p95_ns>
+    p99        | <p99_ns>    | <p99_ns>
+    p99.9      | <p99.9_ns>  | <p99.9_ns>
+    Max        | <max_ns>    | <max_ns>
 
-  --- Throughput ---
-  Pinned Orders/sec : 4,166,666
+    --- Throughput ---
+    Unpinned Orders/sec : <ops/sec>
+    Pinned Orders/sec   : <ops/sec>
 
 =======================================================
 ```
 
+Use the included harness and the `docs/benchmarking.md` instructions to
+generate reproducible numbers for your environment.
 ---
 
 ## 14. README.md Specification
@@ -816,13 +823,17 @@ engine.stop();
 
 ## 16. Non-Functional Requirements / Performance Targets
 
-| Metric              | Target                          | How to verify                    |
+These targets are illustrative guidance for experiment design. Actual
+performance is hardware- and OS-dependent and must be validated using the
+included benchmark harness.
+
+| Metric              | Guidance                        | How to verify                    |
 |---------------------|---------------------------------|----------------------------------|
-| p99 latency (pinned)| < 1,000 ns                      | benchmark `lastProcessedId()` polling |
-| Throughput          | > 2M orders/second              | benchmark output                 |
+| p99 latency (pinned)| Design objective: minimize latency and maximize throughput while maintaining deterministic behavior. Actual performance must be validated on target hardware using the documented benchmarking methodology. | benchmark `lastProcessedId()` polling |
+| Throughput          | Aim for high sustained order/sec on pinned cores — verify with the bench harness | benchmark output                 |
 | Memory (pool)       | ~64 MB for 1M order slots       | `sizeof(Order) × POOL_SIZE` (embedded `std::array`) |
-| Compile time        | < 30s on a 4-core machine       | `make -j4`                       |
-| Zero external deps  | No Boost, no third-party libs   | CMakeLists.txt has no find_pkg   |
+| Compile time        | Reasonable (< 30s on modest machines) | `make -j4`                       |
+| Zero external deps  | No Boost, no third-party libs   | `CMakeLists.txt` has no find_pkg   |
 
 ---
 
@@ -860,7 +871,7 @@ Before considering the project complete, verify:
 - [ ] `./matching_engine` prints the scripted demo with correct outputs
 - [ ] `./benchmark` includes a warmup phase (10K orders polled via `lastProcessedId()`) and prints both pinned and unpinned latencies
 - [ ] Per-order latency is measured by polling `lastProcessedId()` after each `submitRequest()` call
-- [ ] p99 latency printed by benchmark is under 1,000 ns (pinned)
+- [ ] Benchmark prints p50/p95/p99/p99.9 and throughput for both unpinned and pinned runs
 - [ ] README.md architecture diagram shows risk check → queue → engine → `lastProcessedId()` flow
 - [ ] `submitRequest()` calls `risk_check_.validate()` before `queue_.push()` — invalid orders never enter the queue
 - [ ] `MemoryPool<Order, POOL_SIZE>` compiles with compile-time capacity (no runtime constructor argument)

@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="260" viewBox="0 0 900 260">
+  <style>
+    .box { fill:#f6f8fa; stroke:#0366d6; stroke-width:2; rx:6; }
+    .label { font-family: Arial, sans-serif; font-size:14px; fill:#222; }
+    .small { font-size:12px; fill:#444; }
+    .arrow { stroke:#222; stroke-width:2; fill:none; marker-end:url(#arrowhead); }
+  </style>
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#222" />
+    </marker>
+  </defs>
+
+  <rect class="box" x="20" y="30" width="160" height="60"/>
+  <text class="label" x="100" y="60" text-anchor="middle">Producer Thread</text>
+  <text class="small" x="100" y="76" text-anchor="middle">create OrderRequest</text>
+
+  <rect class="box" x="220" y="30" width="160" height="60"/>
+  <text class="label" x="300" y="60" text-anchor="middle">Pre-Trade Risk</text>
+  <text class="small" x="300" y="76" text-anchor="middle">validate & commit</text>
+
+  <rect class="box" x="420" y="30" width="160" height="60"/>
+  <text class="label" x="500" y="60" text-anchor="middle">SPSC Queue</text>
+  <text class="small" x="500" y="76" text-anchor="middle">OrderRequest payload</text>
+
+  <rect class="box" x="620" y="30" width="200" height="60"/>
+  <text class="label" x="720" y="60" text-anchor="middle">Engine Thread</text>
+  <text class="small" x="720" y="76" text-anchor="middle">deque -> processRequest()</text>
+
+  <path class="arrow" d="M180 60 L220 60"/>
+  <path class="arrow" d="M380 60 L420 60"/>
+  <path class="arrow" d="M580 60 L620 60"/>
+
+  <!-- Lower lane -->
+  <rect class="box" x="420" y="140" width="160" height="60"/>
+  <text class="label" x="500" y="170" text-anchor="middle">MemoryPool</text>
+  <text class="small" x="500" y="186" text-anchor="middle">allocate / deallocate Order</text>
+
+  <rect class="box" x="620" y="140" width="200" height="60"/>
+  <text class="label" x="720" y="170" text-anchor="middle">OrderBook</text>
+  <text class="small" x="720" y="186" text-anchor="middle">price levels & FIFO queues</text>
+
+  <path class="arrow" d="M720 90 L720 140"/>
+  <path class="arrow" d="M580 170 L620 170"/>
+
+  <rect class="box" x="260" y="140" width="120" height="60"/>
+  <text class="label" x="320" y="170" text-anchor="middle">Trades</text>
+  <text class="small" x="320" y="186" text-anchor="middle">emitted by engine</text>
+
+  <path class="arrow" d="M740 170 L760 170"/>
+
+</svg>

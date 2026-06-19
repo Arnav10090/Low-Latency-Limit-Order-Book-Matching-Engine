@@ -557,6 +557,14 @@ int main() {
     std::cout << "  Timestamps    : LFENCE/RDTSC start | RDTSCP/LFENCE end\n";
     std::cout << "  Calibration   : Median of " << CALIBRATION_SAMPLES
               << " steady_clock windows (" << CALIBRATION_WINDOW.count() << " ms each)\n";
+    if (calibration.use_tsc) {
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(6) << calibration.ticks_per_ns;
+        std::cout << "  Units         : cycle counts are primary; nanoseconds are calibrated estimates\n";
+        std::cout << "  Calib factor  : " << ss.str() << " cycles/ns (median)\n";
+    } else {
+        std::cout << "  Units         : using wall-clock (`steady_clock`) measurements (no TSC)\n";
+    }
     std::cout << "=======================================================\n";
 
     return 0;

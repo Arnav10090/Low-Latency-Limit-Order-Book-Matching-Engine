@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="300" viewBox="0 0 900 300">
+  <style>
+    .bg { fill:#ffffff; }
+    .title { font-family: Arial, sans-serif; font-size:18px; fill:#222; }
+    .hint { font-family: Arial, sans-serif; font-size:13px; fill:#444; }
+    .box { fill:#f6f8fa; stroke:#d1d5da; stroke-width:1; rx:6; }
+  </style>
+
+  <rect class="bg" x="0" y="0" width="900" height="300"/>
+  <text class="title" x="20" y="30">Benchmark Screenshot Placeholder</text>
+  <rect class="box" x="20" y="50" width="860" height="200"/>
+  <text class="hint" x="40" y="85">Replace this file with a real benchmark capture saved to <tspan font-weight="bold">media/benchmark.png</tspan></text>
+  <text class="hint" x="40" y="110">Suggested capture steps (Linux):</text>
+  <text class="hint" x="60" y="135">1) Build: <tspan font-family: monospace">mkdir -p build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j$(nproc)</tspan></text>
+  <text class="hint" x="60" y="160">2) Run benchmark: <tspan font-family: monospace">./benchmark > bench_output.txt</tspan></text>
+  <text class="hint" x="60" y="185">3) Convert to PNG (optional, ImageMagick):</text>
+  <text class="hint" x="80" y="210"> <tspan font-family: monospace">convert -background white -fill black -font DejaVu-Sans-Mono -pointsize 10 label:@bench_output.txt media/benchmark.png</tspan></text>
+</svg>
