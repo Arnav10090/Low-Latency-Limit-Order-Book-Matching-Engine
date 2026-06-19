@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include "timekeeper.h"
 #include <chrono>
 
 namespace ome {
@@ -17,15 +18,14 @@ struct Order {
     // 7 bytes compiler padding (offset 41-47)
     // Total compiler-padded struct = 48 bytes
 
-    // Explicit padding to fill one 64-byte cache line.
-    // 64 - 48 = 16 bytes needed.
-    char pad[16];
+    // Intrusive links for price-level ordering. Use the previous padding
+    // space to avoid increasing the size of `Order` (two pointers = 16 bytes on x64).
+    Order* next_in_level = nullptr;
+    Order* prev_in_level = nullptr;
 
-    // Factory helper
-    static Nanos now_ns() {
-        return static_cast<Nanos>(
-            std::chrono::high_resolution_clock::now().time_since_epoch().count()
-        );
+    // Factory helper — delegate to TimeKeeper for a cached nanosecond clock.
+    static inline Nanos now_ns() noexcept {
+        return TimeKeeper::now_ns();
     }
 };
 

@@ -1,9 +1,0 @@
-PLACEHOLDER: Replace this file with an actual PNG screenshot of the benchmark output.
-
-To generate:
-1) Build the release benchmark: `cmake -DCMAKE_BUILD_TYPE=Release .. && cmake --build . --config Release -- -j$(nproc)`
-2) Run and save textual output: `./benchmark > bench_output.txt`
-3) Convert to PNG (ImageMagick):
-   `convert -background white -fill black -font DejaVu-Sans-Mono -pointsize 10 label:@bench_output.txt ../media/benchmark.png`
-
-After replacing, commit `media/benchmark.png` to show verified results.

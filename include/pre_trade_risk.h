@@ -1,9 +1,9 @@
 #pragma once
-#include <chrono>
 #include <cmath>
 #include <unordered_map>
 
 #include "types.h"
+#include "timekeeper.h"
 
 namespace ome {
 
@@ -11,8 +11,8 @@ class PreTradeRiskCheck {
 public:
     struct ValidationDecision {
         bool accepted = false;
-        std::chrono::time_point<std::chrono::steady_clock> decision_time{};
-        double tokens_after_consume = 0.0;
+        Nanos decision_time = 0;
+        int64_t tokens_after_consume = 0; // scaled integer tokens
         int64_t exposure_delta = 0;
         bool erase_order = false;
         bool upsert_order = false;
@@ -20,28 +20,29 @@ public:
         Quantity tracked_quantity = 0;
     };
 
-    PreTradeRiskCheck(Quantity max_order_size, int64_t max_position, double max_rate_per_sec)
-        : max_order_size_(max_order_size),
-          max_position_(max_position),
-          rate_limit_tokens_(max_rate_per_sec),
-          max_tokens_(max_rate_per_sec),
-          last_check_time_(std::chrono::steady_clock::now()) {}
+        PreTradeRiskCheck(Quantity max_order_size, int64_t max_position, double max_rate_per_sec)
+                : max_order_size_(max_order_size),
+                    max_position_(max_position),
+                    // Use fixed-point integer tokens to avoid floating-point during validate()
+                    rate_limit_tokens_scaled_(static_cast<int64_t>(max_rate_per_sec * TOKEN_SCALE + 0.5)),
+                    max_tokens_scaled_(static_cast<int64_t>(max_rate_per_sec * TOKEN_SCALE + 0.5)),
+                    tokens_per_ns_scaled_(max_tokens_scaled_ / 1000000000LL),
+                    last_check_time_(TimeKeeper::now_ns()) {}
 
     ValidationDecision validate(const OrderRequest& req) const {
         ValidationDecision decision;
 
-        const auto now = std::chrono::steady_clock::now();
-        const double elapsed_sec = std::chrono::duration<double>(now - last_check_time_).count();
-        double available_tokens = rate_limit_tokens_ + (elapsed_sec * max_tokens_);
-        if (available_tokens > max_tokens_) {
-            available_tokens = max_tokens_;
-        }
+        const Nanos now = TimeKeeper::now_ns();
+        const Nanos elapsed_ns = now - last_check_time_;
+        const int64_t added_scaled = static_cast<int64_t>(elapsed_ns) * tokens_per_ns_scaled_;
+        int64_t available_scaled = rate_limit_tokens_scaled_ + added_scaled;
+        if (available_scaled > max_tokens_scaled_) available_scaled = max_tokens_scaled_;
 
-        if (available_tokens < 1.0) {
+        if (available_scaled < TOKEN_SCALE) {
             return decision;
         }
         decision.decision_time = now;
-        decision.tokens_after_consume = available_tokens - 1.0;
+        decision.tokens_after_consume = available_scaled - TOKEN_SCALE;
 
         if (req.action == ActionType::CANCEL) {
             decision.accepted = true;
@@ -105,7 +106,7 @@ public:
         }
 
         last_check_time_ = decision.decision_time;
-        rate_limit_tokens_ = decision.tokens_after_consume;
+        rate_limit_tokens_scaled_ = decision.tokens_after_consume;
         current_position_ += decision.exposure_delta;
 
         if (decision.erase_order) {
@@ -130,9 +131,13 @@ private:
 
     Quantity max_order_size_;
     int64_t max_position_;
-    double rate_limit_tokens_;
-    double max_tokens_;
-    std::chrono::time_point<std::chrono::steady_clock> last_check_time_;
+    // Fixed-point tokens: TOKEN_SCALE represents 1.0 token.
+    static constexpr int64_t TOKEN_SCALE = 1000; // 1 token == 1000 scaled units
+    int64_t rate_limit_tokens_scaled_ = 0;
+    int64_t max_tokens_scaled_ = 0;
+    // tokens gained per nanosecond in scaled units
+    int64_t tokens_per_ns_scaled_ = 0;
+    Nanos last_check_time_ = 0;
     int64_t current_position_ = 0;
     std::unordered_map<OrderId, TrackedOrder> tracked_orders_;
 };

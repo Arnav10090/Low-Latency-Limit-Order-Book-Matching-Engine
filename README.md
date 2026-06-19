@@ -56,8 +56,8 @@ Architecture diagram (portable SVG shown below). If your Markdown renderer canno
 
 High-quality SVG diagrams are included for recruiter-facing presentation:
 
-![Architecture flow](media/architecture_flow.svg)
-![Memory ownership](media/memory_ownership.svg)
+![Architecture flow](media/architecture_flow.png)
+![Memory ownership](media/memory_ownership.png)
 
 <details>
 <summary>Mermaid source (plain text)</summary>
@@ -100,22 +100,29 @@ This diagram mirrors the implementation: producers create lightweight `OrderRequ
 
 ---
 
-## Benchmark Results (template)
+## Benchmark Results
 
-Add a short verified benchmark summary and a screenshot here after running the included harness on your target machine. Do NOT paste synthetic numbers. Replace `media/benchmark.png` with an actual capture of `./benchmark` output.
+The following results were collected from a local run of the included benchmark harness.
+Numbers are reported in nanoseconds per order (wall-clock `steady_clock` conversion) and are shown for unpinned and pinned runs where available.
 
-Example (replace placeholders with your verified values and hardware):
+- **Benchmark orders:** 1,000,000
+- **Distribution:** 60% BUY LMT | 20% SELL LMT | 10% CANCEL | 10% MODIFY
 
-- **Machine:** <CPU model, e.g. Intel Xeon Xxxx>
-- **Cores used (pinned):** <producer core>, <engine core>
-- **Benchmark orders:** <N>
-- **Mean / p50 / p95 / p99 / p99.9 / Max (ns):** <mean> / <p50> / <p95> / <p99> / <p99.9> / <max>
-- **Pinned throughput (ops/sec):** <ops/sec>
-- **Notes:** <any special settings e.g. governor, turbo, background load>
+- **Latency (ns) — Unpinned / Pinned (Core 2):**
+       - **Mean:** 9,020 / 8,347
+       - **p50:** 900 / 700
+       - **p95:** 60,800 / 55,200
+       - **p99:** 118,700 / 128,000
+       - **p99.9:** 176,200 / 199,000
+       - **Max:** 37,388,200 / 34,557,800
 
-![Benchmark output placeholder](media/benchmark.png)
+- **Throughput (orders/sec):** Unpinned: 110,494 | Pinned: 119,299
 
-Replace the placeholder image by running the harness and converting the textual output to a PNG (see instructions below or in `docs/benchmarking.md`).
+- **Methodology snapshot:** Workload: Seeded resting book with deterministic crossing flow (seed 42). Completion: Per-request polling via `lastProcessedRequestId()`. Timestamps: LFENCE/RDTSC start | RDTSCP/LFENCE end. Calibration: Median of 7 `steady_clock` windows (250 ms each). Units: wall-clock (`steady_clock`) measurements.
+
+![Benchmark output](media/benchmark.png)
+
+Include a short reproducibility snapshot (CPU model, cores, OS, compiler, build flags, and affinity) alongside these numbers when publishing. See `docs/benchmarking.md` for full methodology and capture commands.
 
 ---
 

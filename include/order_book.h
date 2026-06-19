@@ -43,13 +43,42 @@ public:
 
 private:
     struct PriceLevel {
-        std::deque<Order*> orders;
-        Quantity           total_quantity = 0;
+        Order* head = nullptr;
+        Order* tail = nullptr;
+        Quantity total_quantity = 0;
+
+        inline Order* front() const { return head; }
+        inline bool empty() const { return head == nullptr; }
+
+        inline void push_back(Order* o) {
+            o->next_in_level = nullptr;
+            o->prev_in_level = tail;
+            if (tail) tail->next_in_level = o;
+            else head = o;
+            tail = o;
+        }
+
+        inline void pop_front() {
+            if (!head) return;
+            Order* o = head;
+            head = o->next_in_level;
+            if (head) head->prev_in_level = nullptr;
+            else tail = nullptr;
+            o->next_in_level = o->prev_in_level = nullptr;
+        }
+
+        inline void erase(Order* o) {
+            if (o->prev_in_level) o->prev_in_level->next_in_level = o->next_in_level;
+            else head = o->next_in_level;
+            if (o->next_in_level) o->next_in_level->prev_in_level = o->prev_in_level;
+            else tail = o->prev_in_level;
+            o->next_in_level = o->prev_in_level = nullptr;
+        }
     };
 
     std::map<Price, PriceLevel, std::greater<Price>> bids_;
     std::map<Price, PriceLevel>                      asks_;
-    std::unordered_map<OrderId, std::pair<Side, Price>> order_index_;
+    std::unordered_map<OrderId, Order*>              order_index_;
 
     std::string symbol_;
     uint64_t    orders_processed_ = 0;
@@ -60,8 +89,8 @@ private:
     std::vector<Trade> matchAgainstAsks(Order* incoming);
     void restInBook(Order* order);
     void removePriceLevelIfEmpty(Side side, Price price);
-    Order* findOrder(OrderId id, Side side, Price price, std::deque<Order*>::iterator* found_it = nullptr);
-    void eraseOrderFromLevel(Side side, Price price, std::deque<Order*>::iterator order_it);
+    Order* findOrder(OrderId id);
+    void eraseOrderFromLevel(Side side, Price price, Order* order);
     void updateRestingStatus(Order* order);
     std::vector<Trade> reprocessModifiedOrder(Order* order);
 

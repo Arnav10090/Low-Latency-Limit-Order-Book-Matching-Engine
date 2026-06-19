@@ -18,48 +18,48 @@ bool OrderBook::cancelOrder(OrderId id) {
     ++orders_processed_;
 
     const auto index_it = order_index_.find(id);
-    if (index_it == order_index_.end()) {
-        return false;
-    }
+        if (index_it == order_index_.end()) {
+            return false;
+        }
 
-    const Side side = index_it->second.first;
-    const Price price = index_it->second.second;
-    std::deque<Order*>::iterator order_it;
-    Order* order = findOrder(id, side, price, &order_it);
-    if (order == nullptr) {
+        Order* order = index_it->second;
+        if (order == nullptr) {
+            order_index_.erase(index_it);
+            return false;
+        }
+
+        const Side side = order->side;
+        const Price price = order->price;
+
+        if (side == Side::BUY) {
+            bids_[price].total_quantity -= order->remaining;
+        } else {
+            asks_[price].total_quantity -= order->remaining;
+        }
+
+        order->status = OrderStatus::CANCELLED;
+        eraseOrderFromLevel(side, price, order);
         order_index_.erase(index_it);
-        return false;
-    }
-
-    if (side == Side::BUY) {
-        bids_[price].total_quantity -= order->remaining;
-    } else {
-        asks_[price].total_quantity -= order->remaining;
-    }
-
-    order->status = OrderStatus::CANCELLED;
-    eraseOrderFromLevel(side, price, order_it);
-    order_index_.erase(index_it);
-    pool_.deallocate(order);
-    return true;
+        pool_.deallocate(order);
+        return true;
 }
 
 std::vector<Trade> OrderBook::modifyOrder(OrderId id, Price new_price, Quantity new_qty) {
     ++orders_processed_;
 
     const auto index_it = order_index_.find(id);
-    if (index_it == order_index_.end()) {
-        return {};
-    }
+        if (index_it == order_index_.end()) {
+            return {};
+        }
 
-    const Side side = index_it->second.first;
-    const Price current_price = index_it->second.second;
-    std::deque<Order*>::iterator order_it;
-    Order* order = findOrder(id, side, current_price, &order_it);
-    if (order == nullptr) {
-        order_index_.erase(index_it);
-        return {};
-    }
+        Order* order = index_it->second;
+        if (order == nullptr) {
+            order_index_.erase(index_it);
+            return {};
+        }
+
+        const Side side = order->side;
+        const Price current_price = order->price;
 
     if (new_qty == 0U) {
         if (side == Side::BUY) {
@@ -68,7 +68,7 @@ std::vector<Trade> OrderBook::modifyOrder(OrderId id, Price new_price, Quantity 
             asks_[current_price].total_quantity -= order->remaining;
         }
         order->status = OrderStatus::CANCELLED;
-        eraseOrderFromLevel(side, current_price, order_it);
+        eraseOrderFromLevel(side, current_price, order);
         order_index_.erase(index_it);
         pool_.deallocate(order);
         return {};
@@ -83,7 +83,7 @@ std::vector<Trade> OrderBook::modifyOrder(OrderId id, Price new_price, Quantity 
             asks_[current_price].total_quantity -= order->remaining;
         }
 
-        eraseOrderFromLevel(side, current_price, order_it);
+        eraseOrderFromLevel(side, current_price, order);
         order_index_.erase(index_it);
 
         order->price = new_price;
@@ -113,13 +113,13 @@ std::vector<Trade> OrderBook::modifyOrder(OrderId id, Price new_price, Quantity 
         if (side == Side::BUY) {
             auto& level = bids_[current_price];
             level.total_quantity += delta;
-            level.orders.erase(order_it);
-            level.orders.push_back(order);
+            level.erase(order);
+            level.push_back(order);
         } else {
             auto& level = asks_[current_price];
             level.total_quantity += delta;
-            level.orders.erase(order_it);
-            level.orders.push_back(order);
+            level.erase(order);
+            level.push_back(order);
         }
 
         order->quantity = filled_qty + new_qty;
@@ -210,7 +210,7 @@ std::vector<Trade> OrderBook::matchAgainstAsks(Order* incoming) {
         }
 
         PriceLevel& level = best_it->second;
-        Order* resting = level.orders.front();
+        Order* resting = level.front();
         const Quantity exec_qty = std::min(incoming->remaining, resting->remaining);
         const Price exec_price = resting->price;
 
@@ -223,7 +223,7 @@ std::vector<Trade> OrderBook::matchAgainstAsks(Order* incoming) {
 
         if (resting->remaining == 0U) {
             resting->status = OrderStatus::FILLED;
-            level.orders.pop_front();
+            level.pop_front();
             order_index_.erase(resting->id);
             pool_.deallocate(resting);
         } else {
@@ -248,7 +248,7 @@ std::vector<Trade> OrderBook::matchAgainstBids(Order* incoming) {
         }
 
         PriceLevel& level = best_it->second;
-        Order* resting = level.orders.front();
+        Order* resting = level.front();
         const Quantity exec_qty = std::min(incoming->remaining, resting->remaining);
         const Price exec_price = resting->price;
 
@@ -261,7 +261,7 @@ std::vector<Trade> OrderBook::matchAgainstBids(Order* incoming) {
 
         if (resting->remaining == 0U) {
             resting->status = OrderStatus::FILLED;
-            level.orders.pop_front();
+            level.pop_front();
             order_index_.erase(resting->id);
             pool_.deallocate(resting);
         } else {
@@ -279,83 +279,51 @@ void OrderBook::restInBook(Order* order) {
 
     if (order->side == Side::BUY) {
         auto& level = bids_[order->price];
-        level.orders.push_back(order);
+        level.push_back(order);
         level.total_quantity += order->remaining;
     } else {
         auto& level = asks_[order->price];
-        level.orders.push_back(order);
+        level.push_back(order);
         level.total_quantity += order->remaining;
     }
 
-    order_index_[order->id] = {order->side, order->price};
+    order_index_[order->id] = order;
 }
 
 void OrderBook::removePriceLevelIfEmpty(Side side, Price price) {
     if (side == Side::BUY) {
         auto it = bids_.find(price);
-        if (it != bids_.end() && it->second.orders.empty()) {
+        if (it != bids_.end() && it->second.empty()) {
             bids_.erase(it);
         }
     } else {
         auto it = asks_.find(price);
-        if (it != asks_.end() && it->second.orders.empty()) {
+        if (it != asks_.end() && it->second.empty()) {
             asks_.erase(it);
         }
     }
 }
 
-Order* OrderBook::findOrder(OrderId id, Side side, Price price, std::deque<Order*>::iterator* found_it) {
-    if (side == Side::BUY) {
-        auto level_it = bids_.find(price);
-        if (level_it == bids_.end()) {
-            return nullptr;
-        }
-
-        auto& orders = level_it->second.orders;
-        for (auto it = orders.begin(); it != orders.end(); ++it) {
-            if ((*it)->id == id) {
-                if (found_it != nullptr) {
-                    *found_it = it;
-                }
-                return *it;
-            }
-        }
-        return nullptr;
-    }
-
-    {
-        auto level_it = asks_.find(price);
-        if (level_it == asks_.end()) {
-            return nullptr;
-        }
-
-        auto& orders = level_it->second.orders;
-        for (auto it = orders.begin(); it != orders.end(); ++it) {
-            if ((*it)->id == id) {
-                if (found_it != nullptr) {
-                    *found_it = it;
-                }
-                return *it;
-            }
-        }
-    }
-
-    return nullptr;
+Order* OrderBook::findOrder(OrderId id) {
+    const auto it = order_index_.find(id);
+    if (it == order_index_.end()) return nullptr;
+    return it->second;
 }
 
-void OrderBook::eraseOrderFromLevel(Side side, Price price, std::deque<Order*>::iterator order_it) {
+void OrderBook::eraseOrderFromLevel(Side side, Price price, Order* order) {
+    if (order == nullptr) return;
     if (side == Side::BUY) {
         auto level_it = bids_.find(price);
         if (level_it == bids_.end()) {
             return;
         }
-        level_it->second.orders.erase(order_it);
+        level_it->second.erase(order);
     } else {
         auto level_it = asks_.find(price);
         if (level_it == asks_.end()) {
             return;
         }
-        level_it->second.orders.erase(order_it);
+        level_it->second.erase(order);
     }
 
     removePriceLevelIfEmpty(side, price);

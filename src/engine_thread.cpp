@@ -8,6 +8,8 @@
 #include <string>
 #include <system_error>
 
+#include "timekeeper.h"
+
 #if defined(_WIN32)
 #include <windows.h>
 #endif
@@ -135,6 +137,9 @@ void MatchingEngine::engineLoop() {
 }
 
 void MatchingEngine::processRequest(const OrderRequest& req) {
+    // Refresh the cached timestamp once per request to avoid many
+    // steady_clock::now() calls inside hot-path helpers.
+    TimeKeeper::refresh();
     if (req.action == ActionType::NEW) {
         Order* order = book_.pool().tryAllocate();
         if (order == nullptr) {
