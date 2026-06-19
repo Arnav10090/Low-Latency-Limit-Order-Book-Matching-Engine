@@ -24,6 +24,9 @@ static_assert(std::atomic<RequestId>::is_always_lock_free,
 static_assert(sizeof(CompletionSignal) == CACHE_LINE_SIZE,
               "CompletionSignal must occupy exactly one cache line");
 
+// NOTE: MatchingEngine embeds a MemoryPool<Order, 1'048'576> (~72 MB of storage).
+// Do not declare MatchingEngine on the stack — it will overflow.
+// Use static storage or heap allocation: static MatchingEngine engine(...);
 class MatchingEngine {
 public:
     explicit MatchingEngine(const std::string& symbol,

@@ -77,12 +77,6 @@ taskset -c 2 ./benchmark --warmup=10000 --runs=100000
 ```
 
 
-## Additional Notes for Interviews
-
-- Be prepared to explain why serialized TSC is chosen and how RDTSCP differs from RDTSC.
-- Explain how the completion token avoids cross-thread pointer sharing and why it's a safe, minimal synchronization mechanism.
-- Discuss how to extend the harness to measure hybrid workloads or batched submission for scalability profiling.
-
 ## Screenshot / Artifacts
 
 To include a benchmark screenshot in the repository for recruiter presentation, place a PNG at `media/benchmark.png`. A placeholder SVG (`media/benchmark_placeholder.svg`) is included; replace it with a real capture when you have reproducible results.

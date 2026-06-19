@@ -52,7 +52,7 @@ void printNewTrades(const MatchingEngine& engine, std::size_t trades_before) {
 int main() {
     static MatchingEngine engine("AAPL", 10'000, 100'000, 1'000'000.0);
 
-    std::cout << "=== Dolat Capital - Order Matching Engine Demo ===\n";
+    std::cout << "=== Order Matching Engine Demo ===\n";
     std::cout << "Symbol: AAPL\n\n";
 
     engine.start();

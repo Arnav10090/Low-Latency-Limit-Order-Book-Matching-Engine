@@ -118,11 +118,3 @@ project page for recruiter-facing visuals.
 - SPSC design reduces generality (no multiple producers) but improves performance for the intended single-producer benchmark.
 - MemoryPool reduces heap activity but complicates memory lifecycle; it is owned by the engine to keep ownership simple.
 
-## Interview Discussion Points
-
-- Explain the memory ownership model and why it simplifies concurrency.
-- Justify SPSC vs MPMC and tradeoffs if the system needed to scale to multiple producers.
-- Discuss measurement techniques (serialized TSC) and their pitfalls.
-- Describe how to extend this design to a multi-symbol engine and the cost of doing so.
-
-

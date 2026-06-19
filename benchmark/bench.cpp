@@ -527,7 +527,7 @@ int main() {
     const BenchmarkStats pinned = runBenchmark(pinned_engine, requests, calibration, true);
 
     std::cout << "=======================================================\n";
-    std::cout << "  Dolat Capital - Order Matching Engine Benchmark\n";
+    std::cout << "  Order Matching Engine Benchmark\n";
     std::cout << "=======================================================\n";
     std::cout << "  Orders        : " << formatNumber(BENCH_COUNT) << "\n";
     std::cout << "  Distribution  : 60% BUY LMT | 20% SELL LMT | 10% CANCEL | 10% MODIFY\n";
