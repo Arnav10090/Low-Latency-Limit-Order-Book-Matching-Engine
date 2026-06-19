@@ -1,46 +1,68 @@
 #pragma once
-#include <vector>
-#include <stack>
-#include <stdexcept>
+#include <array>
 #include <cstddef>
+#include <stdexcept>
 
 namespace ome {
 
 template <typename T, std::size_t Capacity>
 class MemoryPool {
 public:
-    MemoryPool() : storage_(Capacity) {
-        // Pre-populate free list with pointers to all slots
-        for (std::size_t i = 0; i < Capacity; ++i) {
-            free_list_.push(&storage_[i]);
+    MemoryPool() : head_(0) {
+        static_assert(Capacity > 0, "MemoryPool capacity must be greater than zero");
+        for (std::size_t i = 0; i + 1 < Capacity; ++i) {
+            free_indices_[i] = i + 1;
         }
+        free_indices_[Capacity - 1] = Capacity;
     }
 
-    // Allocate one object slot. Throws if pool exhausted.
+    // Hot-path friendly allocation used by the engine thread to avoid throwing on exhaustion.
+    T* tryAllocate() noexcept {
+        if (head_ == Capacity) {
+            return nullptr;
+        }
+
+        const std::size_t free_index = head_;
+        head_ = free_indices_[free_index];
+        return &storage_[free_index];
+    }
+
     T* allocate() {
-        if (free_list_.empty()) {
+        T* slot = tryAllocate();
+        if (slot == nullptr) {
             throw std::runtime_error("MemoryPool exhausted");
         }
-        T* slot = free_list_.top();
-        free_list_.pop();
         return slot;
     }
 
-    // Return slot to pool. Does NOT call destructor — caller's responsibility.
     void deallocate(T* ptr) {
-        free_list_.push(ptr);
+        if (ptr < storage_.data() || ptr >= storage_.data() + Capacity) {
+            throw std::invalid_argument("Pointer does not belong to this MemoryPool");
+        }
+
+        const std::size_t index = static_cast<std::size_t>(ptr - storage_.data());
+        free_indices_[index] = head_;
+        head_ = index;
     }
 
-    std::size_t available() const { return free_list_.size(); }
-    std::size_t capacity()  const { return Capacity; }
+    std::size_t available() const {
+        std::size_t count = 0;
+        std::size_t index = head_;
+        while (index != Capacity) {
+            ++count;
+            index = free_indices_[index];
+        }
+        return count;
+    }
+
+    static constexpr std::size_t capacity() {
+        return Capacity;
+    }
 
 private:
-    // Heap-allocated storage to avoid 64MB stack overflow.
-    // std::vector performs a single contiguous allocation identical to
-    // std::array but lives on the heap. The constructor above pre-sizes
-    // it to Capacity elements, so no reallocation ever occurs.
-    std::vector<T> storage_;
-    std::stack<T*> free_list_;
+    std::size_t head_;
+    std::array<T, Capacity> storage_;
+    std::array<std::size_t, Capacity> free_indices_;
 };
 
 } // namespace ome

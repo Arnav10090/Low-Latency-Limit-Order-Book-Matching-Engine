@@ -1,36 +1,49 @@
 #pragma once
+#include <cstddef>
 #include <cstdint>
 
 namespace ome {
 
 enum class Side : uint8_t {
-    BUY  = 0,
+    BUY = 0,
     SELL = 1
 };
 
 enum class OrderType : uint8_t {
-    LIMIT  = 0,
-    MARKET = 1,
+    LIMIT = 0,
+    MARKET = 1
+};
+
+enum class ActionType : uint8_t {
+    NEW = 0,
+    MODIFY = 1,
     CANCEL = 2
 };
 
 enum class OrderStatus : uint8_t {
-    OPEN      = 0,
-    FILLED    = 1,
-    PARTIAL   = 2,
+    OPEN = 0,
+    FILLED = 1,
+    PARTIAL = 2,
     CANCELLED = 3,
-    REJECTED  = 4
+    REJECTED = 4
 };
 
-// Prices stored as integers (price * 100) to avoid floating-point comparison.
-// e.g., $150.25 is stored as 15025.
-// This is standard practice in HFT systems.
-using Price    = int64_t;
+using Price = int64_t;
 using Quantity = uint32_t;
-using OrderId  = uint64_t;
-using Nanos    = uint64_t;
+using OrderId = uint64_t;
+using RequestId = uint64_t;
+using Nanos = uint64_t;
 
-// Cache line size constant for alignment/padding
-static constexpr size_t CACHE_LINE_SIZE = 64;
+static constexpr std::size_t CACHE_LINE_SIZE = 64;
+
+struct OrderRequest {
+    ActionType action;
+    RequestId request_id;
+    OrderId id;
+    Side side;
+    OrderType type;
+    Price price;
+    Quantity quantity;
+};
 
 } // namespace ome

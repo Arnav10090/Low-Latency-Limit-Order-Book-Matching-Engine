@@ -1,111 +1,144 @@
 # Order Matching Engine
-A low-latency limit order book and matching engine in C++17, built for HFT-style trading infrastructure.
+A C++17 price-time-priority matching engine built as a focused portfolio project for low-latency trading-system roles.
 
-## Benchmark Results
+## Project Positioning
 
-```
-=======================================================
-  Dolat Capital — Order Matching Engine Benchmark
-=======================================================
-  Symbol        : AAPL
-  Orders        : 1,000,000
-  Distribution  : 60% BUY LMT | 20% SELL LMT | 10% BUY MKT | 5% SELL MKT | 5% CANCEL
+This repository is intended to demonstrate:
+- modern C++17
+- producer/consumer engine design
+- SPSC queue usage with lock-free atomics on the target platform
+- cache-aware layout decisions
+- exchange-style order-book semantics
+- Linux-oriented benchmarking and thread pinning
 
-  --- Latency (per order) ---
-  Min      :          0 ns
-  Mean     :        524 ns
-  p50      :        300 ns
-  p95      :        700 ns
-  p99      :      6,200 ns
-  p99.9    :     23,800 ns
-  Max      : 23,263,400 ns
-
-  --- Throughput ---
-  Total time   : 556 ms
-  Orders/sec   : 1,798,489
-
-  --- Book State (end of run) ---
-  Best Bid     : 100,085 ($1,000.85)
-  Best Ask     : (empty)
-  Bid levels   : 238
-  Ask levels   : 0
-
-  --- Matching Stats ---
-  Trades executed : 494,766
-  Orders in book  : 355,511
-=======================================================
-```
+This repository is not presented as:
+- a full exchange
+- a production-ready trading platform
+- a zero-allocation matching engine
 
 ## Architecture
 
-```
-[Order Submission]
-      |
-      v
-[SPSCQueue] (lock-free ring buffer, 64K slots)
-      |
-      v
-[MatchingEngine.processAll()]
-      |
-      v
-[MemoryPool] ---> [OrderBook]
+```text
+[Producer Thread]
+(1) submitRequest(req)
+(2) risk_check_.validate(req)
+(3) queue_.push(req) -> OrderRequest by value
+       |
+       v
+[SPSCQueue<OrderRequest>] (single producer, single consumer)
+       |
+       v
+[Engine Thread]
+(4) Dequeue OrderRequest
+(5) Allocate Order from MemoryPool<Order, 1M>
+(6) Add / Modify / Cancel in OrderBook
                        |
                --------|--------
                |               |
-           [BidMap]        [AskMap]
-       (desc sorted)   (asc sorted)
-       std::map<Price, |  std::map<Price,
-         PriceLevel,   |    PriceLevel>
-       greater<Price>> |
+           [Bid Map]       [Ask Map]
+         std::map        std::map
+               |               |
+               +-------[Trades]
                        |
                        v
-                   [Trades]
+(7) completion_signal.store(req.request_id)
 ```
 
-## Key Design Decisions
+## Architecture Notes
 
-1. **Integer Prices** — Prices are stored as `int64_t` in cents (e.g., $150.25 → 15025) to avoid floating-point comparison issues. This is standard practice in HFT systems.
+- `OrderRequest` is the queue payload. Full `Order` objects are created only on the engine thread.
+- The `MemoryPool<Order, 1M>` removes per-order heap allocation for order object storage, but the overall engine still uses standard-library containers such as `std::map`, `std::deque`, `std::unordered_map`, and a bounded `std::vector<Trade>` that may allocate during setup or structural growth.
+- The order book uses `std::map` price levels and `std::deque` FIFO queues to keep the implementation interview-friendly and easy to reason about.
+- Completion signaling is tracked by unique request identity, not by order identity, so `NEW`, `MODIFY`, and `CANCEL` requests can be timed correctly.
+- Thread pinning and the benchmark path are designed for Linux-style benchmarking, with local Windows support kept mainly for development and validation.
 
-2. **Cache-Line-Padded Orders** — The `Order` struct is padded to exactly 64 bytes (one cache line) to prevent false sharing when orders are accessed from the pre-allocated memory pool.
+## What Is Defensible
 
-3. **Pool Allocator** — A fixed-size `MemoryPool<Order, 1M>` pre-allocates all order slots at startup, providing O(1) alloc/free with zero `malloc` calls during order processing. This eliminates allocator latency jitter.
+- Price-time-priority matching for `NEW`, `MODIFY`, and `CANCEL`
+- Producer-side pre-trade validation before queue insertion
+- Compile-time-capacity memory pool for `Order` storage
+- SPSC queue built on lock-free atomics on supported target architectures
+- Per-request completion polling via `lastProcessedRequestId()`
+- Linux affinity path using `pthread_setaffinity_np()`
 
-4. **Lock-Free SPSC Queue** — A single-producer single-consumer ring buffer using `std::atomic` with `memory_order_acquire`/`release` semantics. No mutexes, no OS scheduler involvement — the queue is wait-free for both push and pop operations.
+## What I Do Not Claim
 
-5. **Price-Time Priority (FIFO)** — Orders at the same price level are matched in FIFO order using `std::deque`. The bid side uses `std::map<Price, PriceLevel, std::greater<Price>>` (descending) so `begin()` is always the best bid; the ask side uses `std::map<Price, PriceLevel>` (ascending) so `begin()` is always the best ask.
+- No claim that the entire hot path is allocation-free
+- No claim that the code is production-ready as an exchange core
+- No claim that benchmark numbers are universal across machines
+- No claim that the benchmark alone proves real-world exchange latency
 
-6. **Cancel via O(1) Index** — An `unordered_map<OrderId, {Side, Price}>` provides O(1) lookup for cancel requests, followed by a linear scan of the deque at that price level. This is acceptable for typical order book depths.
+## Benchmark
+
+Run `./benchmark` on Linux to capture the current pinned vs unpinned numbers for your machine.
+
+Current methodology:
+- warmup with 10,000 requests
+- pre-seed a resting book and generate deterministic crossing flow
+- submit one request at a time and poll `lastProcessedRequestId()`
+- measure with `LFENCE/RDTSC` at start and `RDTSCP/LFENCE` at end on x86
+- calibrate TSC against multiple `steady_clock` windows
+- report mean, p50, p95, p99, p99.9, max, and throughput
+
+Benchmark notes:
+- Results are machine-dependent and should be treated as local measurements, not portable headline numbers.
+- The Linux benchmark path is the target environment for affinity and latency discussion.
+- Windows builds are useful for development validation, but Linux is the intended benchmark platform.
 
 ## Build & Run
 
+Linux:
+
 ```bash
-mkdir build && cd build
+mkdir build
+cd build
 cmake -DCMAKE_BUILD_TYPE=Release ..
 make -j4
-./matching_engine      # interactive demo
-./benchmark            # latency benchmark
+./matching_engine
+./benchmark
 ```
 
-> **Note:** Build with `-j1` if you encounter out-of-memory errors during compilation (the 1M-element memory pool requires significant memory during template instantiation).
+Windows development build:
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config Release
+.\build\Release\matching_engine.exe
+.\build\Release\benchmark.exe
+```
+
+> Note: the benchmark discussion in this repository is Linux-first even though the codebase can also be built locally on Windows.
+
+## Interview-Ready Summary
+
+This is best presented as:
+- a focused low-latency matching-engine portfolio project
+- a demonstration of systems thinking and trading-domain literacy
+- an implementation that prioritizes correctness, ownership boundaries, and benchmark transparency over feature breadth
+
+For interviews, the most defensible description is:
+
+> Built a C++17 price-time-priority order matching engine with producer-side risk checks, an SPSC request queue, compile-time-capacity order storage, and a Linux-oriented benchmark harness using per-request completion polling and serialized TSC timing.
 
 ## Project Structure
 
-```
+```text
 order_matching_engine/
-├── CMakeLists.txt           # Build configuration (two targets: demo + benchmark)
-├── README.md                # This file
+├── CMakeLists.txt
+├── README.md
 ├── include/
-│   ├── types.h              # Core type aliases (Price, Quantity, OrderId, Side, etc.)
-│   ├── order.h              # Order struct (64-byte cache-line aligned)
-│   ├── trade.h              # Trade output record
-│   ├── memory_pool.h        # Fixed-size O(1) object pool allocator
-│   ├── spsc_queue.h         # Lock-free single-producer single-consumer ring buffer
-│   ├── order_book.h         # Price-time priority order book with bid/ask maps
-│   └── matching_engine.h    # Engine orchestrator (queue → pool → book → trades)
+│   ├── types.h
+│   ├── order.h
+│   ├── trade.h
+│   ├── memory_pool.h
+│   ├── spsc_queue.h
+│   ├── pre_trade_risk.h
+│   ├── order_book.h
+│   └── engine_thread.h
 ├── src/
-│   ├── order_book.cpp       # Matching logic, cancel, book state queries
-│   ├── matching_engine.cpp  # Submit/process pipeline implementation
-│   └── main.cpp             # Interactive demo (6 scripted order scenarios)
+│   ├── order_book.cpp
+│   ├── engine_thread.cpp
+│   └── main.cpp
 └── benchmark/
-    └── bench.cpp            # 1M-order latency benchmark with percentile stats
+    └── bench.cpp
 ```

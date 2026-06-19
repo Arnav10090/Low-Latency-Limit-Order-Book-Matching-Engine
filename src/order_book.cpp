@@ -1,7 +1,8 @@
 #include "order_book.h"
-#include <iostream>
-#include <iomanip>
+
 #include <algorithm>
+#include <iomanip>
+#include <iostream>
 
 namespace ome {
 
@@ -10,107 +11,160 @@ OrderBook::OrderBook(const std::string& symbol)
 
 std::vector<Trade> OrderBook::addOrder(Order* order) {
     ++orders_processed_;
-    std::vector<Trade> trades;
-
-    if (order->type == OrderType::MARKET) {
-        if (order->side == Side::BUY) {
-            trades = matchAgainstAsks(order);
-        } else {
-            trades = matchAgainstBids(order);
-        }
-        // Discard unfilled remainder of market order (no resting)
-        pool_.deallocate(order);
-        return trades;
-    }
-
-    // LIMIT order
-    if (order->side == Side::BUY) {
-        trades = matchAgainstAsks(order);
-    } else {
-        trades = matchAgainstBids(order);
-    }
-
-    if (order->remaining > 0) {
-        restInBook(order);
-    } else {
-        // Fully filled — return to pool
-        order->status = OrderStatus::FILLED;
-        pool_.deallocate(order);
-    }
-
-    return trades;
+    return reprocessModifiedOrder(order);
 }
 
 bool OrderBook::cancelOrder(OrderId id) {
     ++orders_processed_;
-    auto it = order_index_.find(id);
-    if (it == order_index_.end()) return false;
 
-    auto [side, price] = it->second;
-
-    if (side == Side::BUY) {
-        auto level_it = bids_.find(price);
-        if (level_it != bids_.end()) {
-            auto& deq = level_it->second.orders;
-            for (auto oit = deq.begin(); oit != deq.end(); ++oit) {
-                if ((*oit)->id == id) {
-                    Order* order = *oit;
-                    level_it->second.total_quantity -= order->remaining;
-                    order->status = OrderStatus::CANCELLED;
-                    deq.erase(oit);
-                    pool_.deallocate(order);
-                    break;
-                }
-            }
-            removePriceLevelIfEmpty(Side::BUY, price);
-        }
-    } else {
-        auto level_it = asks_.find(price);
-        if (level_it != asks_.end()) {
-            auto& deq = level_it->second.orders;
-            for (auto oit = deq.begin(); oit != deq.end(); ++oit) {
-                if ((*oit)->id == id) {
-                    Order* order = *oit;
-                    level_it->second.total_quantity -= order->remaining;
-                    order->status = OrderStatus::CANCELLED;
-                    deq.erase(oit);
-                    pool_.deallocate(order);
-                    break;
-                }
-            }
-            removePriceLevelIfEmpty(Side::SELL, price);
-        }
+    const auto index_it = order_index_.find(id);
+    if (index_it == order_index_.end()) {
+        return false;
     }
 
-    order_index_.erase(it);
+    const Side side = index_it->second.first;
+    const Price price = index_it->second.second;
+    std::deque<Order*>::iterator order_it;
+    Order* order = findOrder(id, side, price, &order_it);
+    if (order == nullptr) {
+        order_index_.erase(index_it);
+        return false;
+    }
+
+    if (side == Side::BUY) {
+        bids_[price].total_quantity -= order->remaining;
+    } else {
+        asks_[price].total_quantity -= order->remaining;
+    }
+
+    order->status = OrderStatus::CANCELLED;
+    eraseOrderFromLevel(side, price, order_it);
+    order_index_.erase(index_it);
+    pool_.deallocate(order);
     return true;
 }
 
+std::vector<Trade> OrderBook::modifyOrder(OrderId id, Price new_price, Quantity new_qty) {
+    ++orders_processed_;
+
+    const auto index_it = order_index_.find(id);
+    if (index_it == order_index_.end()) {
+        return {};
+    }
+
+    const Side side = index_it->second.first;
+    const Price current_price = index_it->second.second;
+    std::deque<Order*>::iterator order_it;
+    Order* order = findOrder(id, side, current_price, &order_it);
+    if (order == nullptr) {
+        order_index_.erase(index_it);
+        return {};
+    }
+
+    if (new_qty == 0U) {
+        if (side == Side::BUY) {
+            bids_[current_price].total_quantity -= order->remaining;
+        } else {
+            asks_[current_price].total_quantity -= order->remaining;
+        }
+        order->status = OrderStatus::CANCELLED;
+        eraseOrderFromLevel(side, current_price, order_it);
+        order_index_.erase(index_it);
+        pool_.deallocate(order);
+        return {};
+    }
+
+    const Quantity filled_qty = order->quantity - order->remaining;
+
+    if (new_price != current_price) {
+        if (side == Side::BUY) {
+            bids_[current_price].total_quantity -= order->remaining;
+        } else {
+            asks_[current_price].total_quantity -= order->remaining;
+        }
+
+        eraseOrderFromLevel(side, current_price, order_it);
+        order_index_.erase(index_it);
+
+        order->price = new_price;
+        order->quantity = filled_qty + new_qty;
+        order->remaining = new_qty;
+        order->timestamp = Order::now_ns();
+        order->status = OrderStatus::OPEN;
+        return reprocessModifiedOrder(order);
+    }
+
+    if (new_qty < order->remaining) {
+        const Quantity delta = order->remaining - new_qty;
+        if (side == Side::BUY) {
+            bids_[current_price].total_quantity -= delta;
+        } else {
+            asks_[current_price].total_quantity -= delta;
+        }
+
+        order->quantity = filled_qty + new_qty;
+        order->remaining = new_qty;
+        updateRestingStatus(order);
+        return {};
+    }
+
+    if (new_qty > order->remaining) {
+        const Quantity delta = new_qty - order->remaining;
+        if (side == Side::BUY) {
+            auto& level = bids_[current_price];
+            level.total_quantity += delta;
+            level.orders.erase(order_it);
+            level.orders.push_back(order);
+        } else {
+            auto& level = asks_[current_price];
+            level.total_quantity += delta;
+            level.orders.erase(order_it);
+            level.orders.push_back(order);
+        }
+
+        order->quantity = filled_qty + new_qty;
+        order->remaining = new_qty;
+        order->timestamp = Order::now_ns();
+        updateRestingStatus(order);
+    }
+
+    return {};
+}
+
 std::optional<Price> OrderBook::bestBid() const {
-    if (bids_.empty()) return std::nullopt;
+    if (bids_.empty()) {
+        return std::nullopt;
+    }
     return bids_.begin()->first;
 }
 
 std::optional<Price> OrderBook::bestAsk() const {
-    if (asks_.empty()) return std::nullopt;
+    if (asks_.empty()) {
+        return std::nullopt;
+    }
     return asks_.begin()->first;
 }
 
-std::size_t OrderBook::bidDepth() const { return bids_.size(); }
-std::size_t OrderBook::askDepth() const { return asks_.size(); }
+std::size_t OrderBook::bidDepth() const {
+    return bids_.size();
+}
+
+std::size_t OrderBook::askDepth() const {
+    return asks_.size();
+}
 
 Quantity OrderBook::totalBidQuantity() const {
     Quantity total = 0;
-    for (const auto& [price, level] : bids_) {
-        total += level.total_quantity;
+    for (const auto& entry : bids_) {
+        total += entry.second.total_quantity;
     }
     return total;
 }
 
 Quantity OrderBook::totalAskQuantity() const {
     Quantity total = 0;
-    for (const auto& [price, level] : asks_) {
-        total += level.total_quantity;
+    for (const auto& entry : asks_) {
+        total += entry.second.total_quantity;
     }
     return total;
 }
@@ -118,13 +172,12 @@ Quantity OrderBook::totalAskQuantity() const {
 void OrderBook::printBook(int levels) const {
     std::cout << "--- Order Book (" << symbol_ << ") ---\n";
 
-    // Print asks in reverse order (highest first, then lower)
     std::vector<std::pair<Price, const PriceLevel*>> ask_levels;
     int count = 0;
     for (auto it = asks_.begin(); it != asks_.end() && count < levels; ++it, ++count) {
         ask_levels.push_back({it->first, &it->second});
     }
-    // Print from highest to lowest ask
+
     for (auto rit = ask_levels.rbegin(); rit != ask_levels.rend(); ++rit) {
         std::cout << "ASK  " << std::setw(5) << rit->first
                   << " | " << std::setw(3) << rit->second->total_quantity << " |\n";
@@ -141,42 +194,40 @@ void OrderBook::printBook(int levels) const {
                       << " | " << std::setw(3) << it->second.total_quantity << " |\n";
         }
     }
+
     std::cout << "\n";
 }
-
-// --- Private methods ---
 
 std::vector<Trade> OrderBook::matchAgainstAsks(Order* incoming) {
     std::vector<Trade> trades;
 
     while (incoming->remaining > 0 && !asks_.empty()) {
         auto best_it = asks_.begin();
-        Price best_ask_price = best_it->first;
+        const Price best_ask_price = best_it->first;
 
-        // For LIMIT orders, stop if best ask exceeds our limit price
         if (incoming->type == OrderType::LIMIT && best_ask_price > incoming->price) {
             break;
         }
 
         PriceLevel& level = best_it->second;
         Order* resting = level.orders.front();
-
-        Quantity exec_qty = std::min(incoming->remaining, resting->remaining);
-        Price exec_price = resting->price; // resting order sets the price (maker pricing)
+        const Quantity exec_qty = std::min(incoming->remaining, resting->remaining);
+        const Price exec_price = resting->price;
 
         incoming->remaining -= exec_qty;
         resting->remaining -= exec_qty;
         level.total_quantity -= exec_qty;
 
-        Trade trade = makeTrade(incoming, resting, exec_price, exec_qty);
-        trades.push_back(trade);
+        trades.push_back(makeTrade(incoming, resting, exec_price, exec_qty));
         ++trades_executed_;
 
-        if (resting->remaining == 0) {
+        if (resting->remaining == 0U) {
             resting->status = OrderStatus::FILLED;
             level.orders.pop_front();
             order_index_.erase(resting->id);
             pool_.deallocate(resting);
+        } else {
+            updateRestingStatus(resting);
         }
 
         removePriceLevelIfEmpty(Side::SELL, best_ask_price);
@@ -190,32 +241,31 @@ std::vector<Trade> OrderBook::matchAgainstBids(Order* incoming) {
 
     while (incoming->remaining > 0 && !bids_.empty()) {
         auto best_it = bids_.begin();
-        Price best_bid_price = best_it->first;
+        const Price best_bid_price = best_it->first;
 
-        // For LIMIT orders, stop if best bid is below our limit price
         if (incoming->type == OrderType::LIMIT && best_bid_price < incoming->price) {
             break;
         }
 
         PriceLevel& level = best_it->second;
         Order* resting = level.orders.front();
-
-        Quantity exec_qty = std::min(incoming->remaining, resting->remaining);
-        Price exec_price = resting->price; // resting order sets the price (maker pricing)
+        const Quantity exec_qty = std::min(incoming->remaining, resting->remaining);
+        const Price exec_price = resting->price;
 
         incoming->remaining -= exec_qty;
         resting->remaining -= exec_qty;
         level.total_quantity -= exec_qty;
 
-        Trade trade = makeTrade(resting, incoming, exec_price, exec_qty);
-        trades.push_back(trade);
+        trades.push_back(makeTrade(resting, incoming, exec_price, exec_qty));
         ++trades_executed_;
 
-        if (resting->remaining == 0) {
+        if (resting->remaining == 0U) {
             resting->status = OrderStatus::FILLED;
             level.orders.pop_front();
             order_index_.erase(resting->id);
             pool_.deallocate(resting);
+        } else {
+            updateRestingStatus(resting);
         }
 
         removePriceLevelIfEmpty(Side::BUY, best_bid_price);
@@ -225,11 +275,7 @@ std::vector<Trade> OrderBook::matchAgainstBids(Order* incoming) {
 }
 
 void OrderBook::restInBook(Order* order) {
-    if (order->remaining < order->quantity) {
-        order->status = OrderStatus::PARTIAL;
-    } else {
-        order->status = OrderStatus::OPEN;
-    }
+    updateRestingStatus(order);
 
     if (order->side == Side::BUY) {
         auto& level = bids_[order->price];
@@ -258,14 +304,105 @@ void OrderBook::removePriceLevelIfEmpty(Side side, Price price) {
     }
 }
 
+Order* OrderBook::findOrder(OrderId id, Side side, Price price, std::deque<Order*>::iterator* found_it) {
+    if (side == Side::BUY) {
+        auto level_it = bids_.find(price);
+        if (level_it == bids_.end()) {
+            return nullptr;
+        }
+
+        auto& orders = level_it->second.orders;
+        for (auto it = orders.begin(); it != orders.end(); ++it) {
+            if ((*it)->id == id) {
+                if (found_it != nullptr) {
+                    *found_it = it;
+                }
+                return *it;
+            }
+        }
+        return nullptr;
+    }
+
+    {
+        auto level_it = asks_.find(price);
+        if (level_it == asks_.end()) {
+            return nullptr;
+        }
+
+        auto& orders = level_it->second.orders;
+        for (auto it = orders.begin(); it != orders.end(); ++it) {
+            if ((*it)->id == id) {
+                if (found_it != nullptr) {
+                    *found_it = it;
+                }
+                return *it;
+            }
+        }
+    }
+
+    return nullptr;
+}
+
+void OrderBook::eraseOrderFromLevel(Side side, Price price, std::deque<Order*>::iterator order_it) {
+    if (side == Side::BUY) {
+        auto level_it = bids_.find(price);
+        if (level_it == bids_.end()) {
+            return;
+        }
+        level_it->second.orders.erase(order_it);
+    } else {
+        auto level_it = asks_.find(price);
+        if (level_it == asks_.end()) {
+            return;
+        }
+        level_it->second.orders.erase(order_it);
+    }
+
+    removePriceLevelIfEmpty(side, price);
+}
+
+void OrderBook::updateRestingStatus(Order* order) {
+    order->status = order->remaining < order->quantity ? OrderStatus::PARTIAL : OrderStatus::OPEN;
+}
+
+std::vector<Trade> OrderBook::reprocessModifiedOrder(Order* order) {
+    std::vector<Trade> trades;
+
+    if (order->type == OrderType::MARKET) {
+        if (order->side == Side::BUY) {
+            trades = matchAgainstAsks(order);
+        } else {
+            trades = matchAgainstBids(order);
+        }
+        order->status = order->remaining == 0U ? OrderStatus::FILLED : OrderStatus::PARTIAL;
+        pool_.deallocate(order);
+        return trades;
+    }
+
+    if (order->side == Side::BUY) {
+        trades = matchAgainstAsks(order);
+    } else {
+        trades = matchAgainstBids(order);
+    }
+
+    if (order->remaining > 0U) {
+        restInBook(order);
+    } else {
+        order->status = OrderStatus::FILLED;
+        pool_.deallocate(order);
+    }
+
+    return trades;
+}
+
 Trade OrderBook::makeTrade(Order* buy, Order* sell, Price exec_price, Quantity qty) {
-    Trade t;
-    t.buy_order_id = buy->id;
-    t.sell_order_id = sell->id;
-    t.execution_price = exec_price;
-    t.quantity = qty;
-    t.timestamp = Order::now_ns();
-    return t;
+    Trade trade{};
+    trade.buy_order_id = buy->id;
+    trade.sell_order_id = sell->id;
+    trade.execution_price = exec_price;
+    trade.quantity = qty;
+    trade.timestamp = Order::now_ns();
+    return trade;
 }
 
 } // namespace ome
