@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <numeric>
+#include <sstream>
 #include <random>
 #include <stdexcept>
 #include <string>
