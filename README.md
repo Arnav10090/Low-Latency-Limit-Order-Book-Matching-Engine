@@ -50,20 +50,7 @@ OrderBook
        |
 Trades (emitted)
 
-Mermaid diagram:
-
-```mermaid
-flowchart LR
-  P[Producer Thread]
-  R[PreTradeRiskCheck]
-  Q[SPSC Queue\n<OrderRequest>]
-  E[Engine Thread]
-  M[MemoryPool\n<Order>]
-  B[OrderBook]
-  T[Trades]
-
-  P --> R --> Q --> E --> M --> B --> T
-```
+Architecture diagram (portable SVG shown below). If your Markdown renderer cannot display Mermaid diagrams, the SVG image provides a consistent fallback. The original Mermaid source is available in the collapsed section for reference.
 
 ### Architecture diagrams
 
@@ -71,6 +58,24 @@ High-quality SVG diagrams are included for recruiter-facing presentation:
 
 ![Architecture flow](media/architecture_flow.svg)
 ![Memory ownership](media/memory_ownership.svg)
+
+<details>
+<summary>Mermaid source (plain text)</summary>
+
+```text
+flowchart LR
+       P[Producer Thread]
+       R[PreTradeRiskCheck]
+       Q[SPSC Queue\n<OrderRequest>]
+       E[Engine Thread]
+       M[MemoryPool\n<Order>]
+       B[OrderBook]
+       T[Trades]
+
+       P --> R --> Q --> E --> M --> B --> T
+```
+
+</details>
 
 If you want to attach a benchmark screenshot to the README, place a PNG at
 `media/benchmark.png`. To generate a reproducible benchmark capture on Linux,
