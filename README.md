@@ -49,7 +49,9 @@ Distribution: 60% BUY LMT | 20% SELL LMT | 10% CANCEL | 10% MODIFY.
 
 ## Build and Run
 
-Prerequisites: `cmake` (>=3.16), GCC or Clang, `make`, Linux.
+### Linux
+
+Prerequisites: `cmake` (>=3.16), GCC or Clang, `make`.
 
 ```bash
 git clone <repo-url>
@@ -67,6 +69,24 @@ Pinned benchmark run:
 ```bash
 taskset -c 2 ./benchmark
 ```
+
+### Windows
+
+Prerequisites: `cmake` (>=3.16), Visual Studio or MinGW.
+
+```cmd
+git clone <repo-url>
+cd "Low-Latency Limit Order Book Matching Engine"
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release ..
+cmake --build . --config Release
+
+.\Release\matching_engine.exe
+.\Release\benchmark.exe > benchmark_run.txt
+```
+
+**Note:** Thread affinity and some performance features are optimized for Linux. Windows builds are supported but may show different performance characteristics.
 
 ## Design Tradeoffs
 

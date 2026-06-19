@@ -22,7 +22,7 @@
 #include <windows.h>
 #endif
 
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 #include <immintrin.h>
 #endif
 
@@ -72,7 +72,7 @@ struct TickCalibration {
 };
 
 void pauseHint() {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     _mm_pause();
 #else
     std::this_thread::yield();
@@ -80,7 +80,7 @@ void pauseHint() {
 }
 
 uint64_t readTicksStart() {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     _mm_lfence();
     return __rdtsc();
 #else
@@ -90,7 +90,7 @@ uint64_t readTicksStart() {
 }
 
 uint64_t readTicksEnd() {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     unsigned int aux = 0;
     const uint64_t ticks = __rdtscp(&aux);
     _mm_lfence();
@@ -102,7 +102,7 @@ uint64_t readTicksEnd() {
 }
 
 TickCalibration calibrateTicks() {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     std::vector<double> samples;
     samples.reserve(CALIBRATION_SAMPLES);
 
