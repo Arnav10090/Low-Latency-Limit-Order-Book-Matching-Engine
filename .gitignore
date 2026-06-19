@@ -39,3 +39,7 @@ desktop.ini
 # Benchmark results (regenerate locally)
 *.csv
 *.log
+
+# Keep sensitive interview artifacts local (do not publish)
+docs/interview-guide.md
+docs/interview_cheatsheet.md
