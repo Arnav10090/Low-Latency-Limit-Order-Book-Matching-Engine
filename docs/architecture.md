@@ -84,12 +84,12 @@ Key modules:
 Visual diagrams are provided in `media/` and referenced from the top-level
 README. They include:
 
-- `media/architecture_flow.svg` — high-level producer → engine flow
-- `media/memory_ownership.svg` — memory and ownership model
-- `media/benchmark_placeholder.svg` — placeholder for benchmark screenshot (replace with a real capture)
+- `media/architecture_flow.png` — high-level producer → engine flow
+- `media/memory_ownership.png` — memory and ownership model
+- `media/benchmark.png` — benchmark output screenshot
 
 Place images in the `media/` folder and reference them from GitHub or your
-project page for recruiter-facing visuals.
+project page.
 
 ## Modify Semantics
 

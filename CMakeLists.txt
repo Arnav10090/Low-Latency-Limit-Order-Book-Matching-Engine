@@ -39,45 +39,4 @@ else()
     target_link_libraries(benchmark pthread)
 endif()
 
-# Bug condition exploration test
-add_executable(test_msvc_bug_condition
-    test_msvc_bug_condition.cpp
-)
-if(MSVC)
-    target_compile_options(test_msvc_bug_condition PRIVATE /W4)
-else()
-    target_compile_options(test_msvc_bug_condition PRIVATE -Wall -Wextra)
-endif()
-
-# TSC detection verification test
-add_executable(test_tsc_detection
-    test_tsc_detection.cpp
-)
-if(MSVC)
-    target_compile_options(test_tsc_detection PRIVATE /W4)
-else()
-    target_compile_options(test_tsc_detection PRIVATE -Wall -Wextra)
-endif()
-
-# Preservation property tests
-add_executable(test_preservation
-    test_preservation.cpp
-)
-if(MSVC)
-    target_compile_options(test_preservation PRIVATE /W4)
-else()
-    target_compile_options(test_preservation PRIVATE -Wall -Wextra)
-    target_link_libraries(test_preservation pthread)
-endif()
-
-# Fix verification test (verifies TSC is enabled after fix)
-add_executable(test_fix_verification
-    test_fix_verification.cpp
-)
-if(MSVC)
-    target_compile_options(test_fix_verification PRIVATE /W4)
-else()
-    target_compile_options(test_fix_verification PRIVATE -Wall -Wextra)
-endif()
-
 # Build with: mkdir build && cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j4

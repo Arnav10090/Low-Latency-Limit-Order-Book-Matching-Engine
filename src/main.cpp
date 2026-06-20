@@ -4,7 +4,7 @@
 #include <string>
 #include <thread>
 
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
 #include <immintrin.h>
 #endif
 
@@ -18,7 +18,7 @@ RequestId nextRequestId() {
 }
 
 void pauseHint() {
-#if defined(__x86_64__) || defined(__i386__)
+#if defined(__x86_64__) || defined(__i386__) || defined(_M_X64) || defined(_M_IX86)
     _mm_pause();
 #else
     std::this_thread::yield();

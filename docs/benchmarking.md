@@ -79,7 +79,7 @@ taskset -c 2 ./benchmark --warmup=10000 --runs=100000
 
 ## Screenshot / Artifacts
 
-To include a benchmark screenshot in the repository for recruiter presentation, place a PNG at `media/benchmark.png`. A placeholder SVG (`media/benchmark_placeholder.svg`) is included; replace it with a real capture when you have reproducible results.
+To include a benchmark screenshot in the repository, place a PNG at `media/benchmark.png`.
 
 Suggested steps to produce a reproducible capture (Linux):
 
